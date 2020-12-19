@@ -217,10 +217,10 @@ class Portfolio():
     def _update_position(cls, cur_pos, ticker, action, num, p):
         print("Updating Position from trade log: ", ticker, action, num, p)
         if ticker.lower().strip() == 'cash':
-            if action.lower().strip().startswith('deposit'):
+            if action.lower().strip().startswith('d'):
                 cur_pos[cls.CASH_COL] = cur_pos[cls.CASH_COL] + num
                 cur_pos[cls.CASH_DEP_COL] = cur_pos[cls.CASH_DEP_COL] + num
-            if action.lower().strip().startswith('withdraw'):
+            if action.lower().strip().startswith('w'):
                 cur_pos[cls.CASH_COL] = cur_pos[cls.CASH_COL] - num
                 cur_pos[cls.CASH_DEP_COL] = cur_pos[cls.CASH_DEP_COL] - num
         else:
@@ -279,32 +279,36 @@ class Portfolio():
         df_price = pd.DataFrame(index=date_ls).join(df_price.set_index(self.DATE_COL)).fillna(method='ffill')
         return df_price
 
-    def _get_portfolio_value_and_return(self):
-        df = self.get_portfolio_value().to_frame(name='value')
-        df['return'] = df['value'].diff()-df['value']
-        df['cum_return'] = df['return'].cumsum()
-        df['change'] = df['value'].diff()
+    def get_portfolio_value_and_return(self):
+        dfp = self.get_portfolio_value()
+        dfp['gain'] = (dfp[self.PORTFOLIO_VAL_COL].diff() - dfp[self.CASH_DEP_COL].diff()).fillna(0)
+        dfp['return'] = (dfp['gain'] / dfp[self.PORTFOLIO_VAL_COL].shift(1)).fillna(0)
+        dfp['cum_gain'] = dfp['gain'].cumsum()
+        dfp['cum_return'] = dfp['return'].cumsum()
 
         ##TODO: Implement this
-        df['benchmark_value'] = df['value']
-        df['benchmark_return'] = df['return']
-
-        return df
+        dfp['gain_bm'] = (dfp[self.PORTFOLIO_VAL_BM_COL].diff() - dfp[self.CASH_DEP_BM_COL].diff()).fillna(0)
+        dfp['return_bm'] = (dfp['gain_bm'] / dfp[self.PORTFOLIO_VAL_BM_COL].shift(1)).fillna(0)
+        dfp['cum_gain_bm'] = dfp['gain_bm'].cumsum()
+        dfp['cum_return_bm'] = dfp['return_bm'].cumsum()
+        return dfp
 
     def get_summary(self):
         res = dict()
 
         ## HISTORICAL VALUE
-        df = self._get_portfolio_value_and_return()
+        df = self.get_portfolio_value_and_return()
         df['date_str'] = df.index.map(lambda x: x.strftime('%Y-%m-%d'))
         df['date_unix'] = pd.DatetimeIndex(df.index).astype(np.int64) // 10 ** 9
 
         res["Historical"] = dict()
-        for col in ['value','return','benchmark_value','benchmark_return']:
+        cols = [self.PORTFOLIO_VAL_COL,'gain','cum_gain','return', 'cum_return']
+        bm_cols = [self.PORTFOLIO_VAL_BM_COL,'gain_bm','cum_gain_bm','return_bm', 'cum_return_bm']
+        for col in cols+bm_cols:
             res["Historical"][col] = df[['date_unix',col]].values.tolist()
 
         ## CURRENT VALUE
-        res["CurrentValue"] = df[['value','return','change']].to_dict(orient='records')[-1]
+        res["CurrentValue"] = df[cols].to_dict(orient='records')[-1]
 
         return res
 
